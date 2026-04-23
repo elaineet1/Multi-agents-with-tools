@@ -115,9 +115,9 @@ def run_agent(system_prompt: str, kb_text: str, query: str) -> str:
         f"{context}\n\n"
         f"--- END CONTEXT ---\n\n"
         f"Customer query: {query}\n\n"
-        f"Answer using the context above. Be concise — this is a Telegram message, "
-        f"so keep your response under 300 words. Use simple formatting (no markdown tables). "
-        f"If context does not cover the query, say so politely."
+        f"Answer in 3-5 short sentences max. No intros, no sign-offs, no filler. "
+        f"Plain text only — no markdown tables or bullet lists unless listing 3+ items. "
+        f"If context does not cover the query, say so in one sentence."
     )
 
     response = llm.invoke([HumanMessage(content=full_prompt)])
@@ -125,33 +125,25 @@ def run_agent(system_prompt: str, kb_text: str, query: str) -> str:
 
 # ── Agent system prompts ──────────────────────────────────────────────────────
 PRODUCT_PROMPT = (
-    "You are the Mattel Singapore Product Advisor. "
-    "Help customers find the right Mattel toy by age, interests, budget, and occasion. "
-    "Mattel brands: Barbie, Hot Wheels, Fisher-Price, UNO. "
-    "Always include a price range when recommending. Be warm and concise. "
-    "If asked about promotions say: Our Promotions Agent can help with that! "
-    "If asked about returns say: Our After-Sales Agent is the right contact for that!"
+    "You are Mattel Singapore's Product Advisor. "
+    "Give direct, specific toy recommendations with price range. "
+    "Brands: Barbie, Hot Wheels, Fisher-Price, UNO. "
+    "Keep replies short — 3-5 sentences max."
 )
 
 PROMOTIONS_PROMPT = (
-    "You are the Mattel Singapore Promotions and Deals Agent. "
-    "Help customers get the best value when buying Mattel products in Singapore. "
-    "Cover: sale events (9.9, 11.11, Children Day, GSS, Christmas), "
-    "retailer promotions (Toys R Us, Shopee, Lazada, Amazon), loyalty programmes, bundles. "
-    "Be enthusiastic and mention multiple platforms where relevant. "
-    "If asked about product specs say: Our Product Advisor can help with that! "
-    "If asked about returns say: Our After-Sales Agent is the right contact for that!"
+    "You are Mattel Singapore's Promotions Agent. "
+    "Give direct answers about sales, vouchers, and deals across Toys R Us, Shopee, Lazada, Amazon SG. "
+    "Key events: 9.9, 11.11, Children's Day, GSS, Christmas. "
+    "Keep replies short — 3-5 sentences max."
 )
 
 AFTERSALES_PROMPT = (
-    "You are the Mattel Singapore After-Sales and Returns Agent. "
-    "Help customers resolve post-purchase issues: returns, refunds, warranty, "
-    "missing parts, defective products, and product safety recalls. "
+    "You are Mattel Singapore's After-Sales Agent. "
+    "Give clear, step-by-step help for returns, refunds, warranty, and defective products. "
     "Return windows: Toys R Us 14 days, Shopee 7 days, Lazada 7-15 days, Amazon 30 days. "
-    "Mattel warranty is 90 days. Claims at https://service.mattel.com. "
-    "Be empathetic. Always give clear step-by-step instructions. "
-    "If asked about product recommendations say: Our Product Advisor can help with that! "
-    "If asked about promotions say: Our Promotions Agent can help with that!"
+    "Warranty: 90 days via https://service.mattel.com. "
+    "Keep replies short — 3-5 sentences max."
 )
 
 # ── LangGraph setup ───────────────────────────────────────────────────────────
@@ -304,13 +296,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 {
                     "type": "text",
                     "text": (
-                        "You are a Mattel toy identification expert. "
-                        "Examine this image and identify:\n"
-                        "1. Toy brand (Barbie, Hot Wheels, Fisher-Price, UNO, Masters of the Universe, etc.)\n"
-                        "2. Specific product name or line if visible\n"
-                        "3. Approximate target age range\n"
-                        "4. Any visible condition issues (for after-sales purposes)\n\n"
-                        "Be specific but concise. If it is not a Mattel toy, say so clearly."
+                        "Identify this toy in one sentence: brand, product name/line, and age range. "
+                        "If it is not a Mattel toy, say so. Be specific and brief."
                     )
                 }
             ])
@@ -338,8 +325,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         badge    = BADGE.get(node, "🤖 Mattel Support")
 
         full_reply = (
-            f"📸 *Toy Identified:*\n{identification}\n\n"
-            f"─────────────────\n\n"
+            f"📸 *{identification}*\n\n"
             f"{response}\n\n"
             f"_{badge}_"
         )
