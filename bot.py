@@ -5,6 +5,7 @@ Hosted on Railway
 """
 
 import os
+import base64
 import logging
 from typing import TypedDict
 
@@ -35,9 +36,11 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 GROQ_API_KEY       = os.environ["GROQ_API_KEY"]
 GROQ_MODEL         = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+VISION_MODEL       = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # ── Initialise LLM + DuckDuckGo ───────────────────────────────────────────────
-llm = ChatGroq(model=GROQ_MODEL, api_key=GROQ_API_KEY, temperature=0.2)
+llm        = ChatGroq(model=GROQ_MODEL,   api_key=GROQ_API_KEY, temperature=0.2)
+vision_llm = ChatGroq(model=VISION_MODEL, api_key=GROQ_API_KEY, temperature=0.1)
 ddg = DuckDuckGoSearchRun()
 
 # ── Keywords that trigger a live web search ───────────────────────────────────
@@ -233,8 +236,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "I can help you with:\n"
         "🛍️ *Product advice* — find the right toy by age & budget\n"
         "🎁 *Promotions & deals* — sales, vouchers, bundles\n"
-        "🔄 *After-sales support* — returns, warranty, defects\n\n"
-        "Just type your question and I'll get back to you!",
+        "🔄 *After-sales support* — returns, warranty, defects\n"
+        "📸 *Toy recognition* — send a photo and I'll identify it!\n\n"
+        "Just type your question or send a photo to get started!",
         parse_mode="Markdown"
     )
 
@@ -246,8 +250,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎁 When is the 11.11 sale for Mattel toys?\n"
         "🎁 How do I get the best deal on Barbie Dreamhouse?\n"
         "🔄 My Fisher-Price toy arrived broken. What do I do?\n"
-        "🔄 How do I return a toy bought on Lazada?\n\n"
-        "Type any question to get started!",
+        "🔄 How do I return a toy bought on Lazada?\n"
+        "📸 *Send a photo* of any Mattel toy and I'll identify it!\n\n"
+        "Type any question or send a photo to get started!",
         parse_mode="Markdown"
     )
 
@@ -280,6 +285,73 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ Sorry, something went wrong. Please try again in a moment."
         )
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+
+    try:
+        # Download highest-resolution photo
+        photo_file = await (await context.bot.get_file(update.message.photo[-1].file_id)).download_as_bytearray()
+        image_b64  = base64.b64encode(bytes(photo_file)).decode("utf-8")
+
+        # Ask vision model to identify the toy
+        vision_response = vision_llm.invoke([
+            HumanMessage(content=[
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "You are a Mattel toy identification expert. "
+                        "Examine this image and identify:\n"
+                        "1. Toy brand (Barbie, Hot Wheels, Fisher-Price, UNO, Masters of the Universe, etc.)\n"
+                        "2. Specific product name or line if visible\n"
+                        "3. Approximate target age range\n"
+                        "4. Any visible condition issues (for after-sales purposes)\n\n"
+                        "Be specific but concise. If it is not a Mattel toy, say so clearly."
+                    )
+                }
+            ])
+        ])
+        identification = vision_response.content.strip()
+
+        # Include any caption the user sent with the photo
+        caption    = (update.message.caption or "").strip()
+        full_query = (
+            f"Photo analysis: {identification}. Customer note: {caption}"
+            if caption else
+            f"Photo analysis: {identification}"
+        )
+
+        # Route through the normal multi-agent graph
+        result = app.invoke({
+            "query":     full_query,
+            "response":  "",
+            "next_node": "",
+            "debug_log": ""
+        })
+
+        response = result.get("response", "Sorry, I could not generate a response.")
+        node     = result.get("next_node", "")
+        badge    = BADGE.get(node, "🤖 Mattel Support")
+
+        full_reply = (
+            f"📸 *Toy Identified:*\n{identification}\n\n"
+            f"─────────────────\n\n"
+            f"{response}\n\n"
+            f"_{badge}_"
+        )
+        await update.message.reply_text(full_reply, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Error handling photo: {e}")
+        await update.message.reply_text(
+            "⚠️ Sorry, I couldn't process that image. "
+            "Please try again or describe the toy in text."
+        )
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error: {context.error}")
 
@@ -289,6 +361,7 @@ def main():
 
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("help",  help_command))
+    app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app_bot.add_error_handler(error_handler)
 
